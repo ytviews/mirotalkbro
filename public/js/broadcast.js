@@ -26,6 +26,8 @@ const settingsForm = document.getElementById('broadcasterSettingsForm');
 
 const copyRoom = document.getElementById('copyRoom');
 const shareRoom = document.getElementById('shareRoom');
+const enableAudio = document.getElementById('enableAudio');
+const disableAudio = document.getElementById('disableAudio');
 const videoBtn = document.getElementById('videoBtn');
 const screenShareStart = document.getElementById('screenShareStart');
 const screenShareStop = document.getElementById('screenShareStop');
@@ -51,6 +53,8 @@ const viewersTable = document.getElementById('viewersTable');
 const viewerOpenMessageForm = document.getElementById('viewerOpenMessageForm');
 const viewersSave = document.getElementById('viewersSave');
 const viewerSearch = document.getElementById('viewerSearch');
+const viewersMuteAudio = document.getElementById('viewersMuteAudio');
+const viewersHideVideo = document.getElementById('viewersHideVideo');
 const viewersDisconnect = document.getElementById('viewersDisconnect');
 
 const fullScreenOn = document.getElementById('fullScreenOn');
@@ -63,46 +67,80 @@ const videoQualitySelect = document.getElementById('videoQualitySelect');
 const videoFpsSelect = document.getElementById('videoFpsSelect');
 const audioSelect = document.getElementById('audioSelect');
 
-const userAgent = navigator.userAgent.toLowerCase();
-const isMobileDevice = isMobile();
-const isTabletDevice = isTablet();
-const isIPadDevice = isIpad();
-const isDesktopDevice = isDesktop();
+const userAgent = navigator.userAgent;
+const parser = new UAParser(userAgent);
+const result = parser.getResult();
+const deviceType = result.device.type || 'desktop';
+const isMobileDevice = deviceType === 'mobile';
+const isTabletDevice = deviceType === 'tablet';
+const isIPadDevice = result.device.model?.toLowerCase() === 'ipad';
+const isDesktopDevice = deviceType === 'desktop';
 
 const isSpeechSynthesisSupported = 'speechSynthesis' in window;
+
+const images = {
+    poster: '../assets/images/loader.gif',
+    mute: '../assets/images/mute.png',
+    hide: '../assets/images/hide.png',
+    viewer: '../assets/images/viewer.png',
+    muteLight: '../assets/images/mute-light.png',
+    hideLight: '../assets/images/hide-light.png',
+    viewerLight: '../assets/images/viewer-light.png',
+};
+
+// =====================================================
+// Body on Load
+// =====================================================
+
+body.onload = onBodyLoad;
+
+function onBodyLoad() {
+    loadBroadcasterToolTip();
+    toggleSettings();
+}
+
+// =====================================================
+// Handle theme
+// =====================================================
+
+const getMode = window.localStorage.mode || 'dark';
+const dark = getMode === 'dark';
+if (dark) body.classList.toggle('dark');
 
 // =====================================================
 // Handle ToolTips
 // =====================================================
 
-const broadcastTooltips = [
-    { element: copyRoom, text: 'Copy and share room URL', position: 'top' },
-    { element: shareRoom, text: 'Share room URL', position: 'top' },
-    { element: videoBtn, text: 'Toggle video', position: 'top' },
-    { element: screenShareStart, text: 'Start screen sharing', position: 'top' },
-    { element: screenShareStop, text: 'Stop screen sharing', position: 'top' },
-    { element: recordingStart, text: 'Start recording', position: 'top' },
-    { element: recordingStop, text: 'Stop recording', position: 'top' },
-    { element: messagesOpenForm, text: 'Toggle messages', position: 'top' },
-    { element: viewersOpenForm, text: 'Toggle viewers', position: 'top' },
-    { element: togglePIP, text: 'Toggle picture in picture', position: 'top' },
-    { element: fullScreenOn, text: 'Enable full screen', position: 'top' },
-    { element: fullScreenOff, text: 'Disable full screen', position: 'top' },
-    { element: settingsBtn, text: 'Toggle settings', position: 'top' },
-    { element: goHome, text: 'Go to home page', position: 'top' },
-    { element: messagesClean, text: 'Clean messages', position: 'top' },
-    { element: messagesSave, text: 'Save messages', position: 'top' },
-    { element: messagesOpenViewersForm, text: 'Toggle viewers', position: 'top' },
-    { element: messagesCloseForm, text: 'Close', position: 'top' },
-    { element: viewersDisconnect, text: 'Disconnect all viewers', position: 'top' },
-    { element: viewersSave, text: 'Save viewers', position: 'top' },
-    { element: viewerOpenMessageForm, text: 'Toggle messages', position: 'top' },
-    { element: viewersCloseForm, text: 'Close', position: 'top' },
-];
-
-body.onload = loadBroadcasterToolTip;
-
 function loadBroadcasterToolTip() {
+    const broadcastTooltips = [
+        { element: copyRoom, text: 'Copy and share room URL', position: 'top' },
+        { element: shareRoom, text: 'Share room URL', position: 'top' },
+        { element: enableAudio, text: 'Enable audio', position: 'top' },
+        { element: disableAudio, text: 'Disable audio', position: 'top' },
+        { element: videoBtn, text: 'Toggle video', position: 'top' },
+        { element: screenShareStart, text: 'Start screen sharing', position: 'top' },
+        { element: screenShareStop, text: 'Stop screen sharing', position: 'top' },
+        { element: recordingStart, text: 'Start recording', position: 'top' },
+        { element: recordingStop, text: 'Stop recording', position: 'top' },
+        { element: messagesOpenForm, text: 'Toggle messages', position: 'top' },
+        { element: viewersOpenForm, text: 'Toggle viewers', position: 'top' },
+        { element: togglePIP, text: 'Toggle picture in picture', position: 'top' },
+        { element: fullScreenOn, text: 'Enable full screen', position: 'top' },
+        { element: fullScreenOff, text: 'Disable full screen', position: 'top' },
+        { element: settingsBtn, text: 'Toggle settings', position: 'top' },
+        { element: goHome, text: 'Go to home page', position: 'top' },
+        { element: messagesClean, text: 'Clean messages', position: 'top' },
+        { element: messagesSave, text: 'Save messages', position: 'top' },
+        { element: messagesOpenViewersForm, text: 'Toggle viewers', position: 'top' },
+        { element: messagesCloseForm, text: 'Close', position: 'top' },
+        { element: viewersMuteAudio, text: 'Mute all viewers microphone', position: 'top' },
+        { element: viewersHideVideo, text: 'Hide all viewers camera', position: 'top' },
+        { element: viewersDisconnect, text: 'Disconnect all viewers', position: 'top' },
+        { element: viewersSave, text: 'Save viewers', position: 'top' },
+        { element: viewerOpenMessageForm, text: 'Toggle messages', position: 'top' },
+        { element: viewersCloseForm, text: 'Close', position: 'top' },
+    ];
+
     broadcastTooltips.forEach(({ element, text, position }) => {
         setTippy(element, text, position);
     });
@@ -144,11 +182,9 @@ socket.on('viewer', (id, iceServers, username) => {
 
     handleDataChannels(id);
 
-    connectedPeers.innerText = Object.keys(peerConnections).length;
-
     addViewer(id, username);
 
-    // popupMessage('toast', 'New viewer', `${username} join`, 'top', 2000);
+    connectedPeers.innerText = Object.keys(peerConnections).length;
 
     playSound('viewer');
 
@@ -161,8 +197,11 @@ socket.on('viewer', (id, iceServers, username) => {
     };
 
     const stream = video.srcObject;
-
     stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+
+    peerConnection.ontrack = (event) => {
+        addViewer(id, username, event.streams[0]);
+    };
 
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
@@ -190,7 +229,7 @@ socket.on('disconnectPeer', (id, username) => {
 });
 
 function thereIsPeerConnections() {
-    return Object.keys(peerConnections).length === 0 ? false : true;
+    return Object.keys(peerConnections).length > 0;
 }
 
 // =====================================================
@@ -215,15 +254,54 @@ function handleDataChannels(id) {
             let data = {};
             try {
                 data = JSON.parse(message.data);
-                appendMessage(data.username, data.message);
-                if (isSpeechSynthesisSupported && broadcastSettings.options.speech_msg) {
-                    speechMessage(data.username, data.message);
-                }
+                handleDataChannelMessage(data);
+                console.log('Incoming dc data', data);
             } catch (err) {
                 console.log('Datachannel error', err);
             }
         };
     };
+}
+
+function handleDataChannelMessage(data) {
+    switch (data.method) {
+        case 'message':
+            appendMessage(data.action.username, data.action.message);
+            if (isSpeechSynthesisSupported && broadcastSettings.options.speech_msg) {
+                speechMessage(data.action.username, data.action.message);
+            }
+            break;
+        case 'audio':
+            console.log('audio', { id: data.action.id, username: data.action.username, enabled: data.action.enabled });
+            const viewerAudioStatus = document.getElementById(
+                `${data.action.id}___${data.action.username}___viewerAudioStatus`,
+            );
+            data.action.enabled
+                ? viewerAudioStatus.classList.remove('color-red')
+                : viewerAudioStatus.classList.add('color-red');
+            break;
+        case 'video':
+            const { id, username, enabled } = data.action;
+            console.log('video', { id, username, enabled });
+
+            const baseId = `${id}___${username}`;
+            const viewerVideoStatus = document.getElementById(`${baseId}___viewerVideoStatus`);
+            const viewerVideoElement = document.getElementById(`${baseId}___viewerVideo`);
+            const viewerVideoElementOff = document.getElementById(`${baseId}___viewerVideoOff`);
+
+            if (viewerVideoStatus && viewerVideoElement && viewerVideoElementOff) {
+                viewerVideoStatus.classList.toggle('color-red', !enabled);
+                viewerVideoElement.classList.toggle('hidden', !enabled);
+                viewerVideoElementOff.classList.toggle('hidden', enabled);
+            } else {
+                console.warn(`Elements not found for viewer with id: ${id}, username: ${username}`);
+            }
+            break;
+        //...
+        default:
+            console.error('Data channel message not handled', data);
+            break;
+    }
 }
 
 function sendToViewersDataChannel(method, action = {}, peerId = '*') {
@@ -238,6 +316,12 @@ function sendToViewersDataChannel(method, action = {}, peerId = '*') {
         }
     }
     function sendTo(id) {
+        if (!thereIsPeerConnections() || !dataChannels[id]) return;
+
+        if (dataChannels[id].readyState !== 'open') {
+            console.warn('DataChannel is not open. Current state:', dataChannels[id].readyState);
+            return;
+        }
         dataChannels[id].send(
             JSON.stringify({
                 method: method,
@@ -246,13 +330,6 @@ function sendToViewersDataChannel(method, action = {}, peerId = '*') {
         );
     }
 }
-
-// =====================================================
-// Handle theme
-// =====================================================
-
-const getMode = window.localStorage.mode || 'dark';
-if (getMode === 'dark') body.classList.toggle('dark');
 
 // =====================================================
 // Handle element display
@@ -267,11 +344,15 @@ elementDisplay(screenShareStop, false);
 elementDisplay(settingsForm, broadcastSettings.options.settings, broadcastSettings.options.settings ? 'grid' : 'none');
 elementDisplay(copyRoom, broadcastSettings.buttons.copyRoom);
 elementDisplay(shareRoom, broadcastSettings.buttons.shareRoom);
+elementDisplay(disableAudio, broadcastSettings.buttons.audio);
+elementDisplay(enableAudio, broadcastSettings.buttons.audio && false);
 elementDisplay(videoBtn, broadcastSettings.buttons.video);
 elementDisplay(screenShareStart, broadcastSettings.buttons.screenShareStart);
 elementDisplay(recordingStart, broadcastSettings.buttons.recordingStart);
 elementDisplay(messagesOpenForm, broadcastSettings.buttons.messagesOpenForm);
 elementDisplay(viewersOpenForm, broadcastSettings.buttons.viewersOpenForm);
+elementDisplay(viewersHideVideo, broadcastSettings.options.show_viewers && viewerSettings.buttons.video);
+elementDisplay(viewersMuteAudio, broadcastSettings.options.show_viewers && viewerSettings.buttons.audio);
 elementDisplay(fullScreenOn, broadcastSettings.buttons.fullScreenOn && isFullScreenSupported());
 elementDisplay(togglePIP, broadcastSettings.buttons.pictureInPicture && isPIPSupported());
 elementDisplay(settingsBtn, broadcastSettings.options.settings);
@@ -333,14 +414,20 @@ function toggleSettings() {
 // Handle video
 // =====================================================
 
-video.addEventListener('click', toggleFullScreen);
-video.addEventListener('wheel', handleZoom);
+video.addEventListener('click', function () {
+    toggleFullScreen(video);
+});
 
-function toggleFullScreen() {
+video.addEventListener('wheel', function (e) {
+    handleZoom(e, video);
+});
+
+function toggleFullScreen(video) {
+    if (isMobileDevice) return;
     isFullScreen() ? goOutFullscreen() : goInFullscreen(video);
 }
 
-function handleZoom(e) {
+function handleZoom(e, video) {
     e.preventDefault();
     if (!video.srcObject || !broadcastSettings.options.zoom_video) return;
     const delta = e.wheelDelta ? e.wheelDelta : -e.deltaY;
@@ -364,17 +451,36 @@ navigator.share
     : shareRoom.addEventListener('click', shareRoomQR);
 
 // =====================================================
+// Handle audio
+// =====================================================
+
+enableAudio.addEventListener('click', () => toggleAudio(true));
+disableAudio.addEventListener('click', () => toggleAudio(false));
+
+function toggleAudio(enable) {
+    const audioTrack = broadcastStream.getAudioTracks()[0];
+    if (audioTrack) {
+        audioTrack.enabled = enable;
+    }
+    elementDisplay(enableAudio, !enable);
+    elementDisplay(disableAudio, enable && broadcastSettings.buttons.audio);
+    sendToViewersDataChannel('audio', { enable });
+    checkTrackAndPopup(broadcastStream);
+}
+
+// =====================================================
 // Handle video stream
 // =====================================================
 
 videoBtn.addEventListener('click', toggleVideo);
 
 function toggleVideo() {
-    const color = getMode === 'dark' ? 'white' : 'black';
+    const color = dark ? 'white' : 'black';
     videoBtn.style.color = videoBtn.style.color == 'red' ? color : 'red';
     videoOff.style.visibility = videoBtn.style.color == 'red' ? 'visible' : 'hidden';
-    window.stream.getVideoTracks()[0].enabled = !window.stream.getVideoTracks()[0].enabled;
+    broadcastStream.getVideoTracks()[0].enabled = !broadcastStream.getVideoTracks()[0].enabled;
     sendToViewersDataChannel('video', { visibility: videoOff.style.visibility });
+    checkTrackAndPopup(broadcastStream);
 }
 
 // =====================================================
@@ -556,6 +662,8 @@ viewersSave.addEventListener('click', saveViewers);
 viewerSearch.addEventListener('keyup', searchViewer);
 viewerOpenMessageForm.addEventListener('click', toggleMessagesForm);
 
+viewersMuteAudio.addEventListener('click', muteALLViewers);
+viewersHideVideo.addEventListener('click', hideALLViewers);
 viewersDisconnect.addEventListener('click', disconnectALLViewers);
 
 function toggleViewersForm() {
@@ -595,51 +703,143 @@ function searchViewer() {
     }
 }
 
-function addViewer(id, username) {
+function addViewer(id, username, stream = null) {
     connectedViewers[id] = username;
-    console.log('ConnectedViewers', {
-        connected: username,
-        connectedViewers: connectedViewers,
-    });
+    console.log('ConnectedViewers', { connected: username, connectedViewers: connectedViewers });
+
     const trDel = document.getElementById(id);
     if (trDel) viewersTable.removeChild(trDel);
+
     const tr = document.createElement('tr');
     const tdUsername = document.createElement('td');
-    const tdDisconnect = document.createElement('td');
-    const button = document.createElement('button');
-    const p = document.createElement('p');
+    const tdVideo = document.createElement('td');
+    const tdActions = document.createElement('td');
+    const buttonAudio = document.createElement('button');
+    const buttonVideo = document.createElement('button');
+    const buttonDisconnect = document.createElement('button');
+    const videoElement = document.createElement('video');
+    const videoElementOff = document.createElement('img');
+
     tr.id = id;
-    p.innerText = username;
-    button.id = `${id}___${username}`;
-    button.innerText = 'Disconnect';
-    tdUsername.appendChild(p);
-    tdDisconnect.appendChild(button);
+    tdUsername.innerText = username;
+
+    const { hasVideo, hasAudio } = hasVideoOrAudioTracks(stream);
+
+    Object.assign(videoElement, {
+        id: `${id}___${username}___viewerVideo`,
+        autoplay: true,
+        controls: false,
+        srcObject: stream,
+        poster: images.poster,
+    });
+
+    Object.assign(videoElementOff, {
+        id: `${id}___${username}___viewerVideoOff`,
+        src: dark ? images.hide : images.hideLight,
+    });
+
+    videoElement.style.width = '100%';
+    videoElement.style.height = '100%';
+    videoElement.style.cursor = 'pointer';
+    videoElementOff.classList.add('hidden');
+
+    const width = 150;
+    const height = Math.round((width / 16) * 9); // Calculate 16:9 height (84px)
+
+    tdVideo.style.position = 'relative';
+    tdVideo.style.width = `${width}px`;
+    tdVideo.style.height = `${height}px`;
+
+    tdVideo.appendChild(videoElement);
+    tdVideo.appendChild(videoElementOff);
+
+    if (hasAudio) {
+        Object.assign(buttonAudio, {
+            id: `${id}___${username}___viewerAudioStatus`,
+            className: 'fas fa-microphone color-red',
+        });
+        tdActions.appendChild(buttonAudio);
+    }
+
+    if (hasVideo) {
+        Object.assign(buttonVideo, {
+            id: `${id}___${username}___viewerVideoStatus`,
+            className: 'fas fa-video color-red',
+        });
+        tdActions.appendChild(buttonVideo);
+
+        if (stream.getVideoTracks()[0].enabled) {
+            videoElement.classList.add('hidden');
+            videoElementOff.classList.remove('hidden');
+        }
+
+        videoElement.addEventListener('click', function () {
+            toggleFullScreen(videoElement);
+        });
+        videoElement.addEventListener('wheel', function (e) {
+            handleZoom(e, videoElement);
+        });
+        videoElement.addEventListener('leavepictureinpicture', (event) => {
+            console.log('Exited PiP mode');
+            if (videoElement.paused) {
+                videoElement.play().catch((error) => {
+                    console.error('Error playing video after exit PIP mode', error);
+                });
+            }
+        });
+    }
+
+    Object.assign(buttonDisconnect, {
+        id: `${id}___${username}___disconnect`,
+        className: 'fas fa-plug color-red',
+    });
+    tdActions.appendChild(buttonDisconnect);
+
     tr.appendChild(tdUsername);
-    tr.appendChild(tdDisconnect);
+    tr.appendChild(tdVideo);
+    tr.appendChild(tdActions);
+
     viewersTable.appendChild(tr);
-    handleDisconnectPeer(button.id);
+
+    handleAudioPeer(buttonAudio.id);
+    handleDisconnectPeer(buttonDisconnect.id);
+    handleVideoPeer(buttonVideo.id);
 }
 
-function handleDisconnectPeer(uuid) {
-    const buttonDisconnect = document.getElementById(uuid);
+function handleVideoPeer(id) {
+    const buttonAudio = document.getElementById(id);
+    if (!buttonAudio) return;
+    buttonAudio.addEventListener('click', () => {
+        sendToViewersDataChannel('hide', {}, getPeerId(id));
+    });
+}
+
+function handleAudioPeer(id) {
+    const buttonVideo = document.getElementById(id);
+    if (!buttonVideo) return;
+    buttonVideo.addEventListener('click', () => {
+        sendToViewersDataChannel('mute', {}, getPeerId(id));
+    });
+}
+
+function handleDisconnectPeer(id) {
+    const buttonDisconnect = document.getElementById(id);
+    if (!buttonDisconnect) return;
     buttonDisconnect.addEventListener('click', () => {
-        const words = uuid.split('___');
-        const peerId = words[0];
-        const peerName = words[1];
         Swal.fire({
             allowOutsideClick: false,
             allowEscapeKey: false,
             showDenyButton: true,
             position: 'top',
             title: 'Disconnect',
-            text: `Do you want to disconnect ${peerName} ?`,
+            text: `Do you want to disconnect ${getPeerName(id)} ?`,
             confirmButtonText: `Yes`,
             denyButtonText: `No`,
             showClass: { popup: 'animate__animated animate__fadeInDown' },
             hideClass: { popup: 'animate__animated animate__fadeOutUp' },
         }).then((result) => {
             if (result.isConfirmed) {
-                sendToViewersDataChannel('disconnect', {}, peerId);
+                sendToViewersDataChannel('disconnect', {}, getPeerId(id));
             }
         });
     });
@@ -654,6 +854,48 @@ function delViewer(id, username) {
     const tr = document.getElementById(id);
     viewersTable.removeChild(tr);
     if (!thereIsPeerConnections() && viewersFormOpen) toggleViewersForm();
+}
+
+function muteALLViewers() {
+    if (!thereIsPeerConnections()) return;
+    Swal.fire({
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showDenyButton: true,
+        position: 'top',
+        imageUrl: dark ? images.mute : images.muteLight,
+        title: 'Mute all viewers',
+        text: 'Do you want to mute all viewers microphone?',
+        confirmButtonText: `Yes`,
+        denyButtonText: `No`,
+        showClass: { popup: 'animate__animated animate__fadeInDown' },
+        hideClass: { popup: 'animate__animated animate__fadeOutUp' },
+    }).then((result) => {
+        if (result.isConfirmed) {
+            sendToViewersDataChannel('mute');
+        }
+    });
+}
+
+function hideALLViewers() {
+    if (!thereIsPeerConnections()) return;
+    Swal.fire({
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showDenyButton: true,
+        position: 'top',
+        imageUrl: dark ? images.hide : images.hideLight,
+        title: 'Hide all viewers',
+        text: 'Do you want to hide all viewers camera?',
+        confirmButtonText: `Yes`,
+        denyButtonText: `No`,
+        showClass: { popup: 'animate__animated animate__fadeInDown' },
+        hideClass: { popup: 'animate__animated animate__fadeOutUp' },
+    }).then((result) => {
+        if (result.isConfirmed) {
+            sendToViewersDataChannel('hide');
+        }
+    });
 }
 
 function disconnectALLViewers(confirmation = true) {
@@ -684,6 +926,8 @@ function disconnectALLViewers(confirmation = true) {
 // =====================================================
 
 togglePIP.addEventListener('click', handleVideoPIP);
+
+handleVideoPIPonExit();
 
 function handleVideoPIP() {
     if (!video.srcObject) {
@@ -728,18 +972,18 @@ videoFpsSelect.onchange = applyVideoConstraints;
 
 function applyVideoConstraints() {
     const videoConstraints = getVideoConstraints();
-    window.stream
+    broadcastStream
         .getVideoTracks()[0]
         .applyConstraints(videoConstraints)
         .then(() => {
-            logStreamSettingsInfo();
+            logStreamSettingsInfo(broadcastStream);
             localStorage.videoQualitySelectedIndex = videoQualitySelect.selectedIndex;
             localStorage.videoFpsSelectedIndex = videoFpsSelect.selectedIndex;
         })
         .catch((error) => {
+            console.error('setVideoQuality Error', error.name, error.message);
             videoQualitySelect.selectedIndex = localStorage.videoQualitySelectedIndex;
             videoFpsSelect.selectedIndex = localStorage.videoFpsSelectedIndex;
-            console.error('setVideoQuality', error);
             popupMessage(
                 'warning',
                 'Video quality/fps',
@@ -780,52 +1024,55 @@ videoSelect.onchange = getStream;
 getStream().then(getDevices).then(gotDevices);
 
 function getStream() {
-    videoOff.style.visibility = 'hidden';
+    try {
+        videoOff.style.visibility = 'hidden';
 
-    videoQualitySelect.selectedIndex = localStorage.videoQualitySelectedIndex
-        ? localStorage.videoQualitySelectedIndex
-        : 0;
-    videoFpsSelect.selectedIndex = localStorage.videoFpsSelectedIndex ? localStorage.videoFpsSelectedIndex : 0;
-    videoBtn.style.color = getMode === 'dark' ? 'white' : 'black';
+        videoQualitySelect.selectedIndex = localStorage.videoQualitySelectedIndex
+            ? localStorage.videoQualitySelectedIndex
+            : 0;
+        videoFpsSelect.selectedIndex = localStorage.videoFpsSelectedIndex ? localStorage.videoFpsSelectedIndex : 0;
+        videoBtn.style.color = dark ? 'white' : 'black';
 
-    const audioSource = audioSelect.value;
-    const videoSource = videoSelect.value;
+        const audioSource = audioSelect.value;
+        const videoSource = videoSelect.value;
 
-    const screenConstraints = { audio: true, video: true };
-    const cameraConstraints = {
-        audio: { deviceId: audioSource ? { exact: audioSource } : undefined },
-        video: { deviceId: videoSource ? { exact: videoSource } : undefined },
-    };
-    const constraints = screenShareEnabled ? screenConstraints : cameraConstraints;
+        const screenConstraints = { audio: true, video: true };
+        const cameraConstraints = {
+            audio: { deviceId: audioSource ? { exact: audioSource } : undefined },
+            video: { deviceId: videoSource ? { exact: videoSource } : undefined },
+        };
+        const constraints = screenShareEnabled ? screenConstraints : cameraConstraints;
 
-    stopWindowStream();
-    stopBroadcastStream();
+        if (screenShareEnabled) {
+            stopVideoTrack(broadcastStream);
 
-    if (screenShareEnabled) {
-        video.classList.remove('mirror');
-        isVideoMirrored = false;
+            video.classList.remove('mirror');
+            isVideoMirrored = false;
+            return navigator.mediaDevices
+                .getDisplayMedia(constraints)
+                .then(gotScreenStream)
+                .then(applyVideoConstraints)
+                .catch(handleMediaDeviceError);
+        }
+
+        if (isDesktopDevice && !isVideoMirrored) {
+            video.className = 'mirror';
+            isVideoMirrored = true;
+        }
+
+        stopTracks(broadcastStream);
+
         return navigator.mediaDevices
-            .getDisplayMedia(constraints)
-            .then(gotScreenStream)
+            .getUserMedia(constraints)
+            .then(gotStream)
             .then(applyVideoConstraints)
-            .catch(handleError);
+            .catch(handleMediaDeviceError);
+    } catch (error) {
+        handleMediaDeviceError(error);
     }
-
-    if (isDesktopDevice && !isVideoMirrored) {
-        video.className = 'mirror';
-        isVideoMirrored = true;
-    }
-
-    return navigator.mediaDevices
-        .getUserMedia(constraints)
-        .then(gotStream)
-        .then(applyVideoConstraints)
-        .catch(handleError);
 }
 
 function gotStream(stream) {
-    window.stream = stream;
-    broadcastStream = stream;
     if (!screenShareEnabled) {
         audioSelect.selectedIndex = [...audioSelect.options].findIndex(
             (option) => option.text === stream.getAudioTracks()[0].label,
@@ -847,13 +1094,12 @@ function gotScreenStream(stream) {
     if (audioTabTrack) tracksToInclude.push(audioTabTrack);
     if (audioTrack) tracksToInclude.push(audioTrack);
     const newStream = new MediaStream(tracksToInclude);
-    window.stream = newStream;
-    broadcastStream = newStream;
     attachStream(newStream);
     socket.emit('broadcaster', broadcastID);
 }
 
 function attachStream(stream) {
+    broadcastStream = stream;
     video.srcObject = stream;
     video.playsInline = true;
     video.autoplay = true;
@@ -862,28 +1108,12 @@ function attachStream(stream) {
     video.controls = false;
 }
 
-function stopBroadcastStream() {
-    if (broadcastStream) {
-        broadcastStream.getTracks().forEach((track) => {
-            track.stop();
-        });
-    }
-}
-
-function stopWindowStream() {
-    if (window.stream) {
-        window.stream.getTracks().forEach((track) => {
-            track.stop();
-        });
-    }
-}
-
-function handleError(error) {
+function handleMediaDeviceError(error) {
     console.error('Error', error);
     if (screenShareEnabled) {
         toggleScreen();
     } else {
-        popupMessage('warning', 'Ops', error);
+        handleMediaStreamError(error);
     }
 }
 

@@ -44,25 +44,7 @@ function getRandomInt(max) {
 }
 
 function isPIPSupported() {
-    return !isMobile() && document.pictureInPictureEnabled;
-}
-
-function isMobile() {
-    return !!/Android|webOS|iPhone|iPad|iPod|BB10|BlackBerry|IEMobile|Opera Mini|Mobile|mobile/i.test(userAgent || '');
-}
-
-function isTablet() {
-    return /(ipad|tablet|(android(?!.*mobile))|(windows(?!.*phone)(.*touch))|kindle|playbook|silk|(puffin(?!.*(IP|AP|WP))))/.test(
-        userAgent,
-    );
-}
-
-function isIpad() {
-    return /macintosh/.test(userAgent) && 'ontouchend' in document;
-}
-
-function isDesktop() {
-    return !isMobileDevice && !isTabletDevice && !isIPadDevice;
+    return !isMobileDevice && document.pictureInPictureEnabled;
 }
 
 function setTippy(elem, content, placement) {
@@ -77,22 +59,119 @@ function setTippy(elem, content, placement) {
     }
 }
 
+function getPeerId(id) {
+    return id.split('___')[0];
+}
+
+function getPeerName(id) {
+    return id.split('___')[1];
+}
+
 function getUUID4() {
     return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) =>
         (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16),
     );
 }
 
+function hasVideoOrAudioTracks(mediaStream) {
+    const hasVideo = mediaStream && mediaStream.getVideoTracks().length > 0;
+    const hasAudio = mediaStream && mediaStream.getAudioTracks().length > 0;
+    return { hasVideo, hasAudio };
+}
+
 function hasAudioTrack(mediaStream) {
-    if (!mediaStream) return false;
-    const audioTracks = mediaStream.getAudioTracks();
-    return audioTracks.length > 0;
+    return mediaStream && mediaStream.getAudioTracks().length > 0;
 }
 
 function hasVideoTrack(mediaStream) {
-    if (!mediaStream) return false;
-    const videoTracks = mediaStream.getVideoTracks();
-    return videoTracks.length > 0;
+    return mediaStream && mediaStream.getVideoTracks().length > 0;
+}
+
+function stopTracks(mediaStream) {
+    if (mediaStream) {
+        mediaStream.getTracks().forEach((track) => {
+            track.stop();
+        });
+    }
+}
+
+function stopAudioTrack(mediaStream) {
+    if (mediaStream) {
+        mediaStream.getAudioTracks().forEach((audioTrack) => {
+            audioTrack.stop();
+        });
+    }
+}
+
+function stopVideoTrack(mediaStream) {
+    if (mediaStream) {
+        mediaStream.getVideoTracks().forEach((videoTrack) => {
+            videoTrack.stop();
+        });
+    }
+}
+
+function checkTrackAndPopup(mediaStream) {
+    let message = '';
+
+    const audioTrack = mediaStream.getAudioTracks()[0];
+    const videoTrack = mediaStream.getVideoTracks()[0];
+
+    const on = '<span class="color-green">on</span>';
+    const off = '<span class="color-red">off</span>';
+
+    if (audioTrack) {
+        const audioEnabled = audioTrack.enabled;
+        message = `Your microphone is ${audioEnabled ? on : off}`;
+    }
+
+    if (videoTrack) {
+        const videoEnabled = videoTrack.enabled;
+        const videoMessage = `Your camera is ${videoEnabled ? on : off}`;
+        message = message ? `${message}, ${videoMessage}` : videoMessage;
+    }
+
+    popupMessage('toast', 'Microphone/Camera', message, 'top');
+}
+
+function handleMediaStreamError(error) {
+    let errorMessage = error;
+    let shouldHandleGetUserMediaError = true;
+
+    switch (error.name) {
+        case 'NotFoundError':
+        case 'DevicesNotFoundError':
+            errorMessage = 'Required track is missing';
+            break;
+        case 'NotReadableError':
+        case 'TrackStartError':
+            errorMessage = 'Device is already in use';
+            break;
+        case 'OverconstrainedError':
+        case 'ConstraintNotSatisfiedError':
+            errorMessage = 'Constraints cannot be satisfied by available devices';
+            break;
+        case 'NotAllowedError':
+        case 'PermissionDeniedError':
+            errorMessage = 'Permission denied in browser';
+            break;
+        case 'AbortError':
+            errorMessage = 'Operation aborted unexpectedly';
+            break;
+        case 'SecurityError':
+            errorMessage = 'Security error: Check your connection or browser settings';
+            break;
+        default:
+            errorMessage = "Can't get stream, make sure you are in a secure TLS context (HTTPS) and try again";
+            shouldHandleGetUserMediaError = false;
+            break;
+    }
+
+    if (shouldHandleGetUserMediaError) {
+        errorMessage += `
+        Check the common <a href="https://blog.addpipe.com/common-getusermedia-errors" target="_blank">getUserMedia errors</a></li>`;
+    }
+    popupMessage('warning', 'Ops', errorMessage, 'center');
 }
 
 function saveDataToFile(dataURL, fileName) {
@@ -172,7 +251,9 @@ async function shareRoomNavigator() {
     try {
         await navigator.share({ url: roomURL });
     } catch (err) {
-        console.error('[Error] navigator share', err);
+        console.error('[Error] navigator share, falling back to QR', err);
+
+        if (!isMobileDevice) shareRoomQR();
     }
 }
 
@@ -194,6 +275,17 @@ function isFullScreen() {
         null;
     if (elementFullScreen === null) return false;
     return true;
+}
+
+function handleVideoPIPonExit() {
+    video.addEventListener('leavepictureinpicture', (event) => {
+        console.log('Exited PiP mode');
+        if (video.paused) {
+            video.play().catch((error) => {
+                console.error('Error playing video after exit PIP mode', error);
+            });
+        }
+    });
 }
 
 function togglePictureInPicture(element) {
@@ -223,9 +315,8 @@ function goOutFullscreen() {
     else if (document.msExitFullscreen) document.msExitFullscreen();
 }
 
-function logStreamSettingsInfo() {
-    const stream = window.stream;
-    let streamInfo = [];
+function logStreamSettingsInfo(stream) {
+    const streamInfo = [];
     if (stream.getVideoTracks()[0]) {
         streamInfo.push({
             video: {
@@ -280,6 +371,12 @@ function makeDraggable(element, dragObj) {
     function closeDragElement() {
         document.onmouseup = null;
         document.onmousemove = null;
+    }
+}
+
+function hideElement(element) {
+    if (!element.classList.contains('hidden')) {
+        element.classList.add('hidden');
     }
 }
 

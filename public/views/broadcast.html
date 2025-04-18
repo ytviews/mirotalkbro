@@ -9,6 +9,13 @@
         <link rel="apple-touch-icon" href="../assets/images/favicon.png" />
         <link rel="icon" type="image/x-icon" href="../assets/images/favicon.ico" />
 
+        <meta property="og:type" content="app-webrtc-broadcasting" />
+        <meta property="og:site_name" content="MiroTalk BRO Broadcast" />
+        <meta property="og:title" content="Click the link to make a call." />
+        <meta property="og:description" content="MiroTalk WebRTC Live Broadcast" />
+        <meta property="og:image" content="https://bro.mirotalk.com/assets/images/ui.png" />
+        <meta property="og:url" content="https://bro.mirotalk.com" />
+
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css" />
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" />
         <link rel="stylesheet" href="../css/common.css" />
@@ -22,30 +29,30 @@
                     ><span id="connectedPeers">0</span> <i class="fas fa-clock"></i> <span id="sessionTime">0s</span>
                 </div>
                 <div class="broadcast-header-buttons">
-                    <button id="goHome"><i class="fas fa-times"></i></button>
+                    <button id="goHome"><i class="fas fa-times color-red"></i></button>
                 </div>
             </div>
             <div class="container">
                 <video class="not-selectable" poster="../assets/images/loader.gif"></video>
-                <div class="video-off">
-                    <img id="videoOff" class="video-off" src="../assets/images/videoOff.png" />
-                </div>
+                <img id="videoOff" class="video-off" src="../assets/images/videoOff.png" />
             </div>
             <label id="recordingLabel" class="pulse">🔴 REC: <span id="recordingTime">0S</span></label>
             <div id="broadcastButtons" class="broadcast-buttons">
-                <button id="settingsBtn"><i class="fa-solid fa-sliders"></i></button>
-                <button id="fullScreenOn"><i class="fas fa-expand-alt"></i></button>
-                <button id="fullScreenOff"><i class="fas fa-compress-alt"></i></button>
-                <button id="togglePIP"><i class="fas fa-images"></i></button>
-                <button id="viewersOpenForm"><i class="fas fa-eye"></i></button>
-                <button id="messagesOpenForm"><i class="fas fa-message"></i></button>
-                <button id="recordingStart"><i class="fas fa-record-vinyl"></i></button>
-                <button id="recordingStop" class="color-red"><i class="fas fa-record-vinyl"></i></button>
+                <button id="copyRoom"><i class="fas fa-copy"></i></button>
+                <button id="shareRoom"><i class="fas fa-share-alt"></i></button>
+                <button id="disableAudio"><i class="fas fa-microphone"></i></button>
+                <button id="enableAudio" class="color-red"><i class="fas fa-microphone"></i></button>
+                <button id="videoBtn"><i class="fas fa-video"></i></button>
                 <button id="screenShareStart"><i class="fas fa-display"></i></button>
                 <button id="screenShareStop" class="pulse-bg"><i class="fa-solid fa-circle-stop"></i></button>
-                <button id="videoBtn"><i class="fas fa-video"></i></button>
-                <button id="shareRoom"><i class="fas fa-share-alt"></i></button>
-                <button id="copyRoom"><i class="fas fa-copy"></i></button>
+                <button id="recordingStart"><i class="fas fa-record-vinyl"></i></button>
+                <button id="recordingStop" class="color-red"><i class="fas fa-record-vinyl"></i></button>
+                <button id="togglePIP"><i class="fas fa-images"></i></button>
+                <button id="fullScreenOn"><i class="fas fa-expand-alt"></i></button>
+                <button id="fullScreenOff"><i class="fas fa-compress-alt"></i></button>
+                <button id="messagesOpenForm"><i class="fas fa-message"></i></button>
+                <button id="viewersOpenForm"><i class="fas fa-eye"></i></button>
+                <button id="settingsBtn"><i class="fa-solid fa-sliders"></i></button>
             </div>
             <div id="broadcasterSettingsForm" class="animate__animated animate__zoomIn">
                 <label class="not-selectable"><i class="fas fa-video"></i> Video source:</label>
@@ -98,7 +105,9 @@
                     <button id="viewersCloseForm"><i class="fas fa-times"></i></button>
                     <button id="viewerOpenMessageForm"><i class="fas fa-message"></i></button>
                     <button id="viewersSave"><i class="fas fa-save"></i></button>
-                    <button id="viewersDisconnect"><i class="fas fa-plug"></i></button>
+                    <button id="viewersDisconnect"><i class="fas fa-plug color-red"></i></button>
+                    <button id="viewersHideVideo"><i class="fas fa-video color-red"></i></button>
+                    <button id="viewersMuteAudio"><i class="fas fa-microphone color-red"></i></button>
                 </div>
                 <input id="viewerSearch" type="text" placeholder=" 🔍 Search viewer..." name="search" />
             </div>
@@ -106,22 +115,24 @@
                 <table id="viewersTable">
                     <tr>
                         <th>Name</th>
+                        <th>Video</th>
                         <th>Actions</th>
                     </tr>
                 </table>
             </div>
         </div>
-        <script src="/socket.io/socket.io.js"></script>
-        <script src="../js/swal.js"></script>
-        <script src="../js/utils.js"></script>
-        <script src="../js/utils.js"></script>
-        <script src="../js/config.js"></script>
-        <script src="../js/broadcast.js"></script>
-        <script src="../js/recording.js"></script>
-        <script async src="../js/umami.js"></script>
         <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11.4.8"></script>
         <script defer src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
         <script defer src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/2.11.8/umd/popper.min.js"></script>
         <script defer src="https://cdnjs.cloudflare.com/ajax/libs/tippy.js/6.3.7/tippy-bundle.umd.min.js"></script>
+        <script defer src="https://cdnjs.cloudflare.com/ajax/libs/UAParser.js/1.0.37/ua-parser.min.js"></script>
+        <script defer src="/socket.io/socket.io.js"></script>
+        <script defer src="../js/swal.js"></script>
+        <script defer src="../js/utils.js"></script>
+        <script defer src="../js/utils.js"></script>
+        <script defer src="../js/config.js"></script>
+        <script defer src="../js/broadcast.js"></script>
+        <script defer src="../js/recording.js"></script>
+        <script async src="../js/umami.js"></script>
     </body>
 </html>

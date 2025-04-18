@@ -10,6 +10,7 @@ console.log('Viewer', {
 
 const body = document.querySelector('body');
 
+const awaitingBroadcaster = document.getElementById('awaitingBroadcaster');
 const viewerForm = document.getElementById('viewerForm');
 const viewerFormHeader = document.getElementById('viewerFormHeader');
 const viewerButtons = document.getElementById('viewerButtons');
@@ -20,6 +21,7 @@ const videoOff = document.getElementById('videoOff');
 
 const enableAudio = document.getElementById('enableAudio');
 const disableAudio = document.getElementById('disableAudio');
+const videoBtn = document.getElementById('videoBtn');
 const recordingStart = document.getElementById('recordingStart');
 const recordingStop = document.getElementById('recordingStop');
 const recordingLabel = document.getElementById('recordingLabel');
@@ -34,29 +36,50 @@ const messagesForm = document.getElementById('messagesForm');
 const messageInput = document.getElementById('messageInput');
 const messageSend = document.getElementById('messageSend');
 
-const userAgent = navigator.userAgent.toLowerCase();
-const isMobileDevice = isMobile();
+const userAgent = navigator.userAgent;
+const parser = new UAParser(userAgent);
+const result = parser.getResult();
+const deviceType = result.device.type || 'desktop';
+const isMobileDevice = deviceType === 'mobile';
+
+// =====================================================
+// Body on Load
+// =====================================================
+
+body.onload = onBodyLoad;
+
+function onBodyLoad() {
+    loadViewerToolTip();
+    toggleMessages();
+}
+
+// =====================================================
+// Handle theme
+// =====================================================
+
+const getMode = window.localStorage.mode || 'dark';
+const dark = getMode === 'dark';
+if (dark) body.classList.toggle('dark');
 
 // =====================================================
 // Handle ToolTips
 // =====================================================
 
-const viewerTooltips = [
-    { element: enableAudio, text: 'Enable audio', position: 'top' },
-    { element: disableAudio, text: 'Disable audio', position: 'top' },
-    { element: recordingStart, text: 'Start recording', position: 'top' },
-    { element: recordingStop, text: 'Stop recording', position: 'top' },
-    { element: snapshot, text: 'Take a snapshot', position: 'top' },
-    { element: togglePIP, text: 'Toggle picture in picture', position: 'top' },
-    { element: messagesBtn, text: 'Toggle messages', position: 'top' },
-    { element: fullScreenOn, text: 'Enable full screen', position: 'top' },
-    { element: fullScreenOff, text: 'Disable full screen', position: 'top' },
-    { element: leave, text: 'Disconnect', position: 'top' },
-];
-
-body.onload = loadViewerToolTip;
-
 function loadViewerToolTip() {
+    const viewerTooltips = [
+        { element: enableAudio, text: 'Enable your audio', position: 'top' },
+        { element: disableAudio, text: 'Disable your audio', position: 'top' },
+        { element: videoBtn, text: 'Toggle your video', position: 'top' },
+        { element: recordingStart, text: 'Start recording', position: 'top' },
+        { element: recordingStop, text: 'Stop recording', position: 'top' },
+        { element: snapshot, text: 'Take a snapshot', position: 'top' },
+        { element: togglePIP, text: 'Toggle picture in picture', position: 'top' },
+        { element: messagesBtn, text: 'Toggle messages', position: 'top' },
+        { element: fullScreenOn, text: 'Enable full screen', position: 'top' },
+        { element: fullScreenOff, text: 'Disable full screen', position: 'top' },
+        { element: leave, text: 'Disconnect', position: 'top' },
+    ];
+
     viewerTooltips.forEach(({ element, text, position }) => {
         setTippy(element, text, position);
     });
@@ -76,10 +99,11 @@ myName.innerText = username;
 
 let peerConnection;
 let dataChannel;
+let viewerStream;
 
 const socket = io.connect(window.location.origin);
 
-socket.on('offer', (id, description, iceServers) => {
+socket.on('offer', async (id, description, iceServers) => {
     peerConnection = new RTCPeerConnection({ iceServers: iceServers });
 
     handleDataChannel();
@@ -91,32 +115,37 @@ socket.on('offer', (id, description, iceServers) => {
         });
     };
 
+    if (viewerStream) {
+        viewerStream.getTracks().forEach((track) => peerConnection.addTrack(track, viewerStream));
+    }
+
+    peerConnection.ontrack = (event) => {
+        saveRecording();
+        attachStream(event.streams[0]);
+        hideElement(awaitingBroadcaster);
+    };
+
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit('candidate', id, event.candidate);
+        }
+    };
+
     peerConnection
         .setRemoteDescription(description)
         .then(() => peerConnection.createAnswer())
         .then((sdp) => peerConnection.setLocalDescription(sdp))
         .then(() => socket.emit('answer', id, peerConnection.localDescription))
         .catch(handleError);
-
-    peerConnection.ontrack = (event) => {
-        saveRecording();
-        attachStream(event.streams[0]);
-        if (event.track.kind === 'audio') {
-            popupEnableAudio();
-        }
-    };
-    peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-            socket.emit('candidate', id, event.candidate);
-        }
-    };
 });
 
 socket.on('candidate', (id, candidate) => {
     peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(handleError);
 });
 
-socket.on('connect', () => {
+socket.on('connect', async () => {
+    await checkViewerAudioVideo();
+
     socket.emit('viewer', broadcastID, username);
 });
 
@@ -130,7 +159,18 @@ socket.on('broadcasterDisconnect', () => {
 
 function handleError(error) {
     console.error('Error', error);
-    //popupMessage('warning', 'Ops', error);
+}
+
+// =====================================================
+// Check Viewer Audio/Video
+// =====================================================
+
+async function checkViewerAudioVideo() {
+    if (broadcastSettings.options.show_viewers && (viewerSettings.buttons.audio || viewerSettings.buttons.video)) {
+        viewerStream = await getStream();
+        if (viewerSettings.buttons.audio) disableAudio.click();
+        if (viewerSettings.buttons.video) videoBtn.click();
+    }
 }
 
 // =====================================================
@@ -165,11 +205,31 @@ function handleDataChannel() {
 
 function handleDataChannelMessage(data) {
     switch (data.method) {
+        case 'mute':
+            if (disableAudio.style.display !== 'none') {
+                disableAudio.click();
+                popupMessage('toast', 'Broadcaster', 'Broadcaster muted your microphone', 'top');
+            }
+            break;
+        case 'hide':
+            if (videoBtn.style.color !== 'red') {
+                videoBtn.click();
+                popupMessage('toast', 'Broadcaster', 'Broadcaster hide your camera', 'top');
+            }
+            break;
         case 'disconnect':
             openURL(viewerSettings.options.disconnect_url);
             break;
         case 'video':
             videoOff.style.visibility = data.action.visibility;
+            break;
+        case 'audio':
+            popupMessage(
+                'toast',
+                'Broadcaster',
+                `Broadcaster audio ${data.action.enable ? 'enabled' : 'disabled'}`,
+                'top',
+            );
             break;
         //...
         default:
@@ -178,22 +238,32 @@ function handleDataChannelMessage(data) {
     }
 }
 
-// =====================================================
-// Handle theme
-// =====================================================
+function sendToBroadcasterDataChannel(method, action = {}) {
+    if (!peerConnection || !dataChannel) return;
 
-const getMode = window.localStorage.mode || 'dark';
-if (getMode === 'dark') body.classList.toggle('dark');
+    if (dataChannel.readyState !== 'open') {
+        console.warn('DataChannel is not open. Current state:', dataChannel.readyState);
+        return;
+    }
+
+    dataChannel.send(
+        JSON.stringify({
+            method: method,
+            action: action,
+        }),
+    );
+}
 
 // =====================================================
 // Handle element display
 // =====================================================
 
 elementDisplay(fullScreenOff, false);
+elementDisplay(disableAudio, broadcastSettings.options.show_viewers && viewerSettings.buttons.audio);
+elementDisplay(enableAudio, broadcastSettings.options.show_viewers && viewerSettings.buttons.audio && false);
+elementDisplay(videoBtn, broadcastSettings.options.show_viewers && viewerSettings.buttons.video);
 elementDisplay(recordingLabel, false);
 elementDisplay(recordingStop, false);
-elementDisplay(disableAudio, viewerSettings.buttons.audio);
-elementDisplay(enableAudio, !viewerSettings.buttons.audio);
 elementDisplay(snapshot, viewerSettings.buttons.snapshot);
 elementDisplay(recordingStart, viewerSettings.buttons.recordingStart);
 elementDisplay(fullScreenOn, viewerSettings.buttons.fullScreenOn && isFullScreenSupported());
@@ -251,6 +321,54 @@ function toggleMessages() {
 }
 
 // =====================================================
+// Handle audio stream
+// =====================================================
+
+enableAudio.addEventListener('click', () => toggleAudio(true));
+disableAudio.addEventListener('click', () => toggleAudio(false));
+
+function toggleAudio(enabled) {
+    if (!viewerStream) return;
+
+    viewerStream.getAudioTracks()[0].enabled = !viewerStream.getAudioTracks()[0].enabled;
+
+    elementDisplay(enableAudio, !enabled);
+    elementDisplay(disableAudio, enabled && viewerSettings.buttons.audio);
+
+    sendToBroadcasterDataChannel('audio', {
+        id: socket.id,
+        username: username,
+        enabled: enabled,
+    });
+
+    checkTrackAndPopup(viewerStream);
+}
+
+// =====================================================
+// Handle video stream
+// =====================================================
+
+videoBtn.addEventListener('click', toggleVideo);
+
+function toggleVideo() {
+    if (!viewerStream) return;
+
+    viewerStream.getVideoTracks()[0].enabled = !viewerStream.getVideoTracks()[0].enabled;
+
+    const color = getMode === 'dark' ? 'white' : 'black';
+    const enabled = videoBtn.style.color !== 'red';
+    videoBtn.style.color = enabled ? 'red' : color;
+
+    sendToBroadcasterDataChannel('video', {
+        id: socket.id,
+        username: username,
+        enabled: !enabled,
+    });
+
+    checkTrackAndPopup(viewerStream);
+}
+
+// =====================================================
 // Handle video
 // =====================================================
 
@@ -258,6 +376,7 @@ video.addEventListener('click', toggleFullScreen);
 video.addEventListener('wheel', handleZoom);
 
 function toggleFullScreen() {
+    if (isMobileDevice) return;
     isFullScreen() ? goOutFullscreen(video) : goInFullscreen(video);
 }
 
@@ -278,29 +397,36 @@ function attachStream(stream) {
     video.srcObject = stream;
     video.playsInline = true;
     video.autoplay = true;
-    video.muted = true;
     video.controls = false;
 }
 
-// =====================================================
-// Handle audio
-// =====================================================
-
-enableAudio.addEventListener('click', setAudioOn);
-disableAudio.addEventListener('click', setAudioOff);
-
-function setAudioOn() {
-    if (!peerConnection) return;
-    video.muted = false;
-    elementDisplay(enableAudio, false);
-    elementDisplay(disableAudio, viewerSettings.buttons.audio);
+async function getStream() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: viewerSettings.buttons.video,
+            audio: viewerSettings.buttons.audio,
+        });
+        return stream;
+    } catch (error) {
+        console.error('Failed to access media devices:', error.message);
+        handleMediaStreamError(error);
+        hideVideoAudioButtons();
+        return null;
+    }
 }
 
-function setAudioOff() {
-    video.muted = true;
+function hideVideoAudioButtons() {
     elementDisplay(disableAudio, false);
-    elementDisplay(enableAudio, true);
+    elementDisplay(enableAudio, false);
+    elementDisplay(videoBtn, false);
 }
+
+video.addEventListener('loadeddata', () => {
+    video.play().catch((error) => {
+        console.error('Autoplay failed', error.message);
+        popupEnableAutoPlay();
+    });
+});
 
 // =====================================================
 // Handle recording
@@ -370,6 +496,8 @@ function gotSnapshot() {
 // =====================================================
 
 togglePIP.addEventListener('click', handleVideoPIP);
+
+handleVideoPIPonExit();
 
 function handleVideoPIP() {
     if (!video.srcObject) {
@@ -474,14 +602,11 @@ messageInput.oninput = function () {
 
 function sendMessage() {
     if (peerConnection && messageInput.value != '') {
-        if (dataChannel.readyState === 'open') {
-            dataChannel.send(
-                JSON.stringify({
-                    username: username,
-                    message: messageInput.value,
-                }),
-            );
-        }
+        sendToBroadcasterDataChannel('message', {
+            id: socket.id,
+            username: username,
+            message: messageInput.value,
+        });
     } else {
         popupMessage('toast', 'Video', 'There is no broadcast connected', 'top');
     }

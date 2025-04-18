@@ -26,7 +26,6 @@
 .broadcast-buttons {
     margin: auto;
     display: flex;
-    flex-direction: row-reverse;
 }
 
 .broadcast-buttons button {
@@ -152,6 +151,7 @@
     color: var(--text-color);
     display: grid;
     grid-gap: 1rem;
+    text-align: right;
 }
 
 .viewers-header input {

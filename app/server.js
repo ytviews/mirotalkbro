@@ -8,15 +8,17 @@
  * @license For open source under AGPL-3.0
  * @license For private project or commercial purposes contact us at: license.mirotalk@gmail.com
  * @author  Miroslav Pejic - miroslav.pejic.85@gmail.com
- * @version 1.0.67
+ * @version 1.1.33
  */
 
 require('dotenv').config();
 
+const httpolyglot = require('httpolyglot');
 const { auth, requiresAuth } = require('express-openid-connect');
 const compression = require('compression');
 const cors = require('cors');
 const express = require('express');
+const helmet = require('helmet');
 const app = express();
 const path = require('path');
 const fs = require('fs');
@@ -31,7 +33,6 @@ const packageJson = require('../package.json');
 const logs = require('./logs');
 const log = new logs('server');
 
-let server; // This server exposed on http or https (self signed certificate)
 const broadcasters = {}; // collect broadcasters grouped by socket.id
 const viewers = {}; // collect viewers grouped by socket.id
 
@@ -55,15 +56,13 @@ if (sentryEnabled) {
 }
 
 // Server
-const protocol = process.env.PROTOCOL || 'http';
-const host = process.env.HOST || 'localhost';
 const port = process.env.PORT || 3016;
-const home = `${protocol}://${host}:${port}`;
+const host = process.env.HOST || `http://localhost:${port}`;
 
 // API
 const apiKeySecret = process.env.API_KEY_SECRET || 'mirotalkbro_default_secret';
 const apiBasePath = '/api/v1'; // api endpoint path
-const apiDocs = home + apiBasePath + '/docs'; // api docs
+const apiDocs = host + apiBasePath + '/docs'; // api docs
 
 // Stun and Turn iceServers
 const iceServers = [];
@@ -79,35 +78,25 @@ if (turnServerEnabled && turnServerUrl && turnServerUsername && turnServerCreden
 }
 
 // Ngrok
-const ngrok = require('ngrok');
+const ngrok = require('@ngrok/ngrok');
 const ngrokEnabled = getEnvBoolean(process.env.NGROK_ENABLED);
 const ngrokAuthToken = process.env.NGROK_AUTH_TOKEN;
 
-// Server Listen on
-if (protocol === 'http') {
-    const http = require('http');
-    server = http.createServer(app);
-} else {
-    const https = require('https');
+// Define paths to the SSL key and certificate files
+const keyPath = path.join(__dirname, 'ssl/key.pem');
+const certPath = path.join(__dirname, 'ssl/cert.pem');
 
-    const keyPath = path.join(__dirname, 'ssl/key.pem');
-    const certPath = path.join(__dirname, 'ssl/cert.pem');
+// Read SSL key and certificate files securely
+const options = {
+    key: fs.readFileSync(keyPath, 'utf-8'),
+    cert: fs.readFileSync(certPath, 'utf-8'),
+};
 
-    if (!fs.existsSync(keyPath)) {
-        log.error('SSL key file not found.');
-        process.exit(1);
-    }
-    if (!fs.existsSync(certPath)) {
-        log.error('SSL certificate file not found.');
-        process.exit(1);
-    }
+// Server both http and https
+const server = httpolyglot.createServer(options, app);
 
-    const options = {
-        key: fs.readFileSync(keyPath, 'utf-8'),
-        cert: fs.readFileSync(certPath, 'utf-8'),
-    };
-    server = https.createServer(options, app);
-}
+// Trust Proxy
+const trustProxy = !!getEnvBoolean(process.env.TRUST_PROXY);
 
 // Cors
 const cors_origin = process.env.CORS_ORIGIN;
@@ -143,6 +132,7 @@ const io = require('socket.io')(server, {
 
 const OIDC = {
     enabled: process.env.OIDC_ENABLED ? getEnvBoolean(process.env.OIDC_ENABLED) : false,
+    baseUrlDynamic: process.env.OIDC_BASE_URL_DYNAMIC ? getEnvBoolean(process.env.OIDC_BASE_URL_DYNAMIC) : false,
     config: {
         issuerBaseURL: process.env.OIDC_ISSUER_BASE_URL,
         clientID: process.env.OIDC_CLIENT_ID,
@@ -154,7 +144,7 @@ const OIDC = {
             scope: 'openid profile email',
         },
         authRequired: process.env.OIDC_AUTH_REQUIRED ? getEnvBoolean(process.env.OIDC_AUTH_REQUIRED) : false,
-        auth0Logout: true,
+        auth0Logout: process.env.OIDC_AUTH_LOGOUT ? getEnvBoolean(process.env.OIDC_AUTH_LOGOUT) : true, // Set to true to enable logout with Auth0
         routes: {
             callback: '/auth/callback',
             login: false,
@@ -165,6 +155,10 @@ const OIDC = {
 
 const OIDCAuth = function (req, res, next) {
     if (OIDC.enabled) {
+        if (req.oidc.isAuthenticated()) {
+            log.debug('OIDC ------> User already Authenticated');
+            return next();
+        }
         requiresAuth()(req, res, next);
     } else {
         next();
@@ -180,6 +174,8 @@ const html = {
     disconnect: path.join(__dirname, '../', 'public/views/disconnect.html'),
 };
 
+app.set('trust proxy', trustProxy); // Enables trust for proxy headers (e.g., X-Forwarded-For) based on the trustProxy setting
+app.use(helmet.noSniff()); // Enable content type sniffing prevention
 app.use(cors(corsOptions));
 app.use(compression());
 app.use(express.json()); // Api parse body data as json
@@ -196,15 +192,6 @@ app.use((req, res, next) => {
     next();
 });
 
-app.post('*', function (next) {
-    next();
-});
-
-app.get('*', function (next) {
-    next();
-});
-
-// Remove trailing slashes in url handle bad requests
 app.use((err, req, res, next) => {
     if (err instanceof SyntaxError || err.status === 400 || 'body' in err) {
         log.error('Request Error', {
@@ -212,7 +199,7 @@ app.use((err, req, res, next) => {
             body: req.body,
             error: err.message,
         });
-        return res.status(400).send({ status: 404, message: err.message });
+        return res.status(400).send({ status: 404, message: err.message }); // Bad request
     }
     if (req.path.substr(-1) === '/' && req.path.length > 1) {
         let query = req.url.slice(req.path.length);
@@ -228,14 +215,35 @@ app.use((err, req, res, next) => {
     }
 });
 
-// OpenID Connect
+// OpenID Connect - Dynamically set baseURL based on incoming host and protocol
 if (OIDC.enabled) {
-    try {
-        app.use(auth(OIDC.config));
-    } catch (err) {
-        log.error(err);
-        process.exit(1);
-    }
+    const getDynamicConfig = (host, protocol) => {
+        const baseURL = `${protocol}://${host}`;
+
+        const config = OIDC.baseUrlDynamic
+            ? {
+                  ...OIDC.config,
+                  baseURL,
+              }
+            : OIDC.config;
+
+        log.debug('OIDC baseURL', config.baseURL);
+
+        return config;
+    };
+
+    // Apply the authentication middleware using dynamic baseURL configuration
+    app.use((req, res, next) => {
+        const host = req.headers.host;
+        const protocol = req.protocol === 'https' ? 'https' : 'http';
+        const dynamicOIDCConfig = getDynamicConfig(host, protocol);
+        try {
+            auth(dynamicOIDCConfig)(req, res, next);
+        } catch (err) {
+            log.error('OIDC Auth Middleware Error', err);
+            process.exit(1);
+        }
+    });
 }
 
 app.get('/profile', OIDCAuth, (req, res) => {
@@ -254,38 +262,38 @@ app.get('/logout', (req, res) => {
     res.redirect('/'); // Redirect to the home page after logout
 });
 
-app.get(['/'], OIDCAuth, (req, res) => {
+app.get('/', OIDCAuth, (req, res) => {
     return res.sendFile(html.home);
 });
 
-app.get(['/home'], (req, res) => {
+app.get('/home', (req, res) => {
     //http://localhost:3016/home?id=123
     const { id } = req.query;
     return Object.keys(req.query).length > 0 && id ? res.sendFile(html.home) : notFound(res);
 });
 
-app.get(['/broadcast'], OIDCAuth, (req, res) => {
+app.get('/broadcast', OIDCAuth, (req, res) => {
     //http://localhost:3016/broadcast?id=123&name=broadcaster
     const { id, name } = req.query;
     return Object.keys(req.query).length > 0 && id && name ? res.sendFile(html.broadcast) : notFound(res);
 });
 
-app.get(['/viewer'], (req, res) => {
+app.get('/viewer', (req, res) => {
     //http://localhost:3016/viewer?id=123&name=viewer
     const { id, name } = req.query;
     return Object.keys(req.query).length > 0 && id && name ? res.sendFile(html.viewer) : notFound(res);
 });
 
-app.get(['/disconnect'], (req, res) => {
+app.get('/disconnect', (req, res) => {
     return res.sendFile(html.disconnect);
 });
 
-app.get(['*'], (req, res) => {
+app.use((req, res) => {
     return notFound(res);
 });
 
 // API request join room endpoint
-app.post([`${apiBasePath}/join`], (req, res) => {
+app.post(`${apiBasePath}/join`, (req, res) => {
     const { host, authorization } = req.headers;
     const api = new ServerApi(host, authorization, apiKeySecret);
     if (!api.isAuthorized()) {
@@ -393,11 +401,10 @@ function getEnvBoolean(key, force_true_if_undefined = false) {
 async function ngrokStart() {
     try {
         await ngrok.authtoken(ngrokAuthToken);
-        await ngrok.connect(port);
-        const api = ngrok.getApi();
-        const list = await api.listTunnels();
-        const tunnelHttps = list.tunnels[0].public_url;
+        const listener = await ngrok.forward({ addr: port });
+        const tunnelHttps = listener.url();
         log.info('Server is running', {
+            trustProxy: trustProxy,
             oidc: OIDC.enabled ? OIDC : false,
             iceServers: iceServers,
             cors: corsOptions,
@@ -412,22 +419,24 @@ async function ngrokStart() {
         });
     } catch (err) {
         log.warn('[Error] ngrokStart', err);
+        await ngrok.kill();
         process.exit(1);
     }
 }
 
 server.listen(port, () => {
-    if (protocol != 'https' && ngrokEnabled && ngrokAuthToken) {
+    if (ngrokEnabled && ngrokAuthToken) {
         ngrokStart();
     } else {
         log.info('Server is running', {
+            trustProxy: trustProxy,
             oidc: OIDC.enabled ? OIDC : false,
             iceServers: iceServers,
             cors: corsOptions,
-            home: home,
-            broadcast: `${home}/${broadcast}`,
-            viewer: `${home}/${viewer}`,
-            viewerHome: `${home}/${viewerHome}`,
+            home: host,
+            broadcast: `${host}/${broadcast}`,
+            viewer: `${host}/${viewer}`,
+            viewerHome: `${host}/${viewerHome}`,
             apiDocs: apiDocs,
             apiKeySecret: apiKeySecret,
             nodeVersion: process.versions.node,
